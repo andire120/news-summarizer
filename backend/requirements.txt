@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+trafilatura
+kss
+transformers
+torch
+accelerate
