@@ -56,7 +56,7 @@ def extract_text(url: str) -> str:
             # trafilatura.fetch_url()는 'user_agent' 인자를 받지 않으므로 제거
             downloaded = trafilatura.fetch_url(url, no_ssl=False)
             if not downloaded:
-                 raise ExtractionError("본문을 가져올 수 없습니다. 웹사이트가 접근을 차단했거나 동적 콘텐츠일 수 있습니다.")
+                raise ExtractionError("본문을 가져올 수 없습니다. 웹사이트가 접근을 차단했거나 동적 콘텐츠일 수 있습니다.")
             text = trafilatura.extract(downloaded, include_comments=False, include_tables=False) or ""
         else:
             text = article_body.get_text(separator='\n', strip=True)
