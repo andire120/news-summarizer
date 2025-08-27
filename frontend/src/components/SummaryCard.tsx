@@ -4,21 +4,61 @@ import React, { useState } from "react";
 interface SummaryCardProps {
   data: {
     id: string;
-    lines3: string;
-    lines5: string;
-    lines8: string;
+    chars100: string; // "lines3" -> "chars100"로 변경
+    chars200: string; // "lines5" -> "chars200"로 변경
+    chars300: string; // "lines8" -> "chars300"로 변경
   };
 }
 
 const SummaryCard: React.FC<SummaryCardProps> = ({ data }) => {
-  const [level, setLevel] = useState<3 | 5 | 8>(3);
+  // 상태 변수명을 명확하게 변경
+  const [summaryLevel, setSummaryLevel] = useState<100 | 200 | 300>(100);
 
-  const content =
-    level === 3 ? data.lines3 : level === 5 ? data.lines5 : data.lines8;
+  // 선택된 요약 레벨에 따라 올바른 데이터를 가져오도록 수정
+  const rawContent =
+    summaryLevel === 100
+      ? data.chars100
+      : summaryLevel === 200
+      ? data.chars200
+      : data.chars300;
+
+  // 요약문을 특정 글자 수 기준으로 줄바꿈하는 함수
+  const formatContentWithBreaks = (text: string, charsPerLine: number) => {
+    let formattedText = "";
+    let lineLength = 0;
+
+    // 텍스트를 단어 단위로 분리 (띄어쓰기 기준)
+    const words = text.split(" ");
+    
+    words.forEach((word, index) => {
+      // 다음 단어를 추가했을 때 글자 수를 초과하는지 확인
+      if (lineLength + word.length + (index > 0 ? 1 : 0) > charsPerLine) {
+        formattedText += "\n"; // 줄바꿈 추가
+        lineLength = 0;
+      }
+      
+      formattedText += (index > 0 ? " " : "") + word;
+      lineLength += word.length + (index > 0 ? 1 : 0);
+    });
+    
+    return formattedText;
+  };
+
+  // 선택된 레벨에 따라 줄바꿈된 컨텐츠를 생성
+  const content = formatContentWithBreaks(rawContent, 30);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    alert("클립보드에 복사되었습니다!");
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      alert("클립보드에 복사되었습니다!");
+    } catch (err) {
+      console.error("복사 실패:", err);
+    }
+    document.body.removeChild(textarea);
   };
 
   return (
@@ -29,34 +69,34 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ data }) => {
 
       <div className="mt-6 flex items-center gap-2">
         <button
-          onClick={() => setLevel(3)}
+          onClick={() => setSummaryLevel(100)} // 3 -> 100으로 변경
           className={`px-4 py-1 rounded-full text-sm font-semibold transition-colors ${
-            level === 3
+            summaryLevel === 100
               ? "bg-blue-600 text-white"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          3줄
+          100자 요약
         </button>
         <button
-          onClick={() => setLevel(5)}
+          onClick={() => setSummaryLevel(200)} // 5 -> 200으로 변경
           className={`px-4 py-1 rounded-full text-sm font-semibold transition-colors ${
-            level === 5
+            summaryLevel === 200
               ? "bg-blue-600 text-white"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          5줄
+          200자 요약
         </button>
         <button
-          onClick={() => setLevel(8)}
+          onClick={() => setSummaryLevel(300)} // 8 -> 300으로 변경
           className={`px-4 py-1 rounded-full text-sm font-semibold transition-colors ${
-            level === 8
+            summaryLevel === 300
               ? "bg-blue-600 text-white"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          8줄
+          300자 요약
         </button>
         <button
           onClick={handleCopy}

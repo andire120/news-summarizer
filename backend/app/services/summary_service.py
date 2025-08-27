@@ -1,4 +1,5 @@
 # app/services/summary_service.py
+# 수정된 파일: 텍스트 추출, 요약 모델 로직 등 핵심 서비스 로직.
 import kss
 import requests
 from bs4 import BeautifulSoup
@@ -41,51 +42,57 @@ def extract_text(url: str) -> str:
     headers = {'User-Agent': user_agent}
 
     try:
-        # requests로 URL에 접근하여 HTML을 가져옴
         print(f"URL 요청 시작: {url}")
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status() # HTTP 오류가 발생하면 예외를 던짐
+        print("URL 요청 성공.")
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 연합뉴스 기사 본문을 찾는 로직 (기존 코드)
         article_body = soup.find('div', id='articleWrap')
         
         if not article_body:
             print("BeautifulSoup으로 본문 추출 실패, trafilatura 재시도...")
-            # trafilatura.fetch_url()는 'user_agent' 인자를 받지 않으므로 제거
             downloaded = trafilatura.fetch_url(url, no_ssl=False)
             if not downloaded:
+                print("trafilatura로 본문 가져오기 실패.")
                 raise ExtractionError("본문을 가져올 수 없습니다. 웹사이트가 접근을 차단했거나 동적 콘텐츠일 수 있습니다.")
             text = trafilatura.extract(downloaded, include_comments=False, include_tables=False) or ""
+            print("trafilatura로 텍스트 추출 완료.")
         else:
             text = article_body.get_text(separator='\n', strip=True)
+            print("BeautifulSoup으로 텍스트 추출 완료.")
 
         if len(text) < 300:
+            print("텍스트 길이가 너무 짧음.")
             raise ContentTooShortError("기사 본문이 너무 짧아 요약할 수 없습니다.")
         
         return text
 
     except requests.exceptions.HTTPError as e:
         print(f"HTTP 오류 발생: {e.response.status_code}")
-        # 4xx, 5xx 에러에 대한 메시지
         raise ExtractionError(f"URL 접근 중 HTTP 오류가 발생했습니다. (상태 코드: {e.response.status_code})")
     except requests.exceptions.ConnectionError as e:
         print(f"연결 오류 발생: {e}")
-        # DNS 오류, 연결 거부 등
         raise ExtractionError("URL에 연결할 수 없습니다. URL을 확인하거나 네트워크 설정을 점검해주세요.")
     except requests.exceptions.Timeout as e:
         print(f"시간 초과 오류 발생: {e}")
-        # 서버 응답 시간 초과
         raise ExtractionError("요청 시간 초과. 웹사이트가 응답하지 않습니다.")
     except Exception as e:
-        # 기타 모든 예외를 처리
         print(f"일반 예외 발생: {e}")
         raise ExtractionError(f"본문 추출 중 알 수 없는 오류 발생: {e}")
 
 @lru_cache(maxsize=settings.CACHE_SIZE)
-def generate_summary(text: str, target_tokens: int = 420) -> str:
-    """텍스트를 요약합니다."""
+def summarize_text_by_chars(text: str, target_chars: int) -> str:
+    """
+    텍스트를 요약하고, 지정된 글자 수에 맞춰 마지막 문장이 잘리지 않도록 후처리합니다.
+    """
+    print(f"요약 함수 호출 (목표 글자 수: {target_chars})")
+    # 목표 글자 수에 맞춰 min_length와 max_length를 더 보수적으로 설정
+    # 한국어는 글자:토큰 비율이 1:1.5 정도이므로, 토큰 수를 글자 수의 2배로 설정
+    target_tokens = int(target_chars * 2)
+    min_tokens = int(target_tokens * 0.5) # 최소 길이를 더 여유롭게 설정하여 문장 완결성을 높임
+    
     load_model_if_not_loaded()
     
     input_text = f"summarize: {text}"
@@ -100,15 +107,38 @@ def generate_summary(text: str, target_tokens: int = 420) -> str:
         out = model.generate(
             **inputs,
             max_length=target_tokens,
-            min_length=min(120, target_tokens // 2),
+            min_length=min_tokens,
             no_repeat_ngram_size=3,
             num_beams=4,
             length_penalty=1.0,
             early_stopping=True,
         )
-    return tokenizer.decode(out[0], skip_special_tokens=True).strip()
+    
+    raw_summary = tokenizer.decode(out[0], skip_special_tokens=True).strip()
+    
+    # 후처리: kss를 사용하여 요약문을 문장 단위로 분리하고
+    # 지정된 글자 수를 넘지 않는 선에서 마지막 문장이 잘리지 않도록 합니다.
+    return postprocess_summary_by_chars(raw_summary, target_chars)
 
-def to_n_lines(summary: str, n: int) -> str:
-    """요약된 텍스트를 kss로 문장 분리 후 n줄로 자릅니다."""
-    sents = [s.strip() for s in kss.split_sentences(summary) if s.strip()]
-    return "\n".join(sents[:n])
+
+def postprocess_summary_by_chars(summary: str, target_chars: int) -> str:
+    """
+    주어진 요약문을 문장 단위로 끊어 목표 글자 수를 맞추는 후처리 함수.
+    """
+    print(f"후처리 함수 호출 (목표 글자 수: {target_chars})")
+    sentences = [s.strip() for s in kss.split_sentences(summary) if s.strip()]
+    
+    final_summary = []
+    current_length = 0
+    
+    for sentence in sentences:
+        # 다음 문장을 추가했을 때 목표 글자 수를 초과하는지 확인
+        # 문장 길이 + 문장 구분자(space) 길이 고려
+        # 마지막 문장이더라도 목표 글자 수를 초과하면 추가하지 않음
+        if current_length + len(sentence) + 1 > target_chars:
+            break
+        
+        final_summary.append(sentence)
+        current_length += len(sentence) + 1
+        
+    return " ".join(final_summary)
