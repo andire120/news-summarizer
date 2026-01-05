@@ -26,7 +26,7 @@ const Home: React.FC = () => {
     string // mutationFn의 파라미터(u) 타입
   >({
     mutationFn: async (u) => {
-      const res = await fetch("http://localhost:8000/api/summarize", {
+      const res = await fetch("http://127.0.0.1:8000/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: u }),
